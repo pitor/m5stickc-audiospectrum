@@ -94,14 +94,11 @@ struct eqBand {
 
 enum : uint8_t {
   ModeSpectrumBars,
-  ModeOscilloscope,
-  ModeTuner,
-  ModeCount,
+  ModeCount, // trick :-)
 };
 
 static uint8_t runmode = 0;
-
-static bool semaphore = false;
+volatile bool semaphore = true;
 static bool needinit = true;
 
 static eqBand audiospectrum[BANDS] = {
@@ -170,12 +167,11 @@ void setup() {
     g *= mag;
     colormap[i] = M5.Lcd.color565((uint8_t)r,(uint8_t)g,0); // Modified by KKQ-KKQ
   }
-  xTaskCreatePinnedToCore(looptask,"calctask",32768,NULL,1,NULL,1);
+  xTaskCreatePinnedToCore(looptask, "calctask", 32768, NULL, 1, NULL, 1);
 }
 
 void initMode() {
-  M5.Lcd.fillRect(0, 0,
-                  TFT_WIDTH, TFT_HEIGHT, BLACK);
+  M5.Lcd.fillRect(0, 0, TFT_WIDTH, TFT_HEIGHT, BLACK);
   switch (runmode) {
     case ModeSpectrumBars:
       M5.Lcd.setTextSize(1);
@@ -184,17 +180,6 @@ void initMode() {
         M5.Lcd.setCursor(BANDS_WIDTH*band + 2, 0);
         M5.Lcd.print(audiospectrum[band].freqname);
       }
-      break;
-
-    case ModeOscilloscope:
-      {
-        M5.Lcd.setTextColor(GREEN);
-        dywapitch_inittracking(&pitchTracker);
-      }
-      break;
-
-    case ModeTuner:
-      M5.Lcd.setTextSize(1);
       break;
   }
 }
@@ -303,84 +288,6 @@ void showFreq(double freq) {
   }
 }
 
-void showOscilloscope()
-{
-  uint16_t i,j;
-  uint16_t *oscbuf_ = oscbuf[curbuf^1];
-  double *vTemp_ = vTemp[curbuf ^ 1];
-  double freq = dywapitch_computepitch(&pitchTracker, vTemp_);
-  if (skipcount < OSC_EXTRASKIP) {
-    ++skipcount;
-    return;
-  }
-  skipcount = 0;
-  uint16_t s = calcNumSamples(freq);
-  double mx = (double)TFT_WIDTH / s;
-  double my;
-  uint16_t maxV = 0;
-  uint16_t minV = 65535;
-  for (i = 0; i < s; ++i) {
-    if (maxV < oscbuf_[i]) maxV = oscbuf_[i];
-    if (minV > oscbuf_[i]) minV = oscbuf_[i];
-  }
-  if (maxV - minV > OSC_NOISEFLOOR) {
-    my = (double)(TFT_HEIGHT-10) / (maxV - minV);
-  }
-  else {
-    my = (double)(TFT_HEIGHT-10) / OSC_NOISEFLOOR;
-    minV = (((int)maxV + (int)minV) >> 1) - OSC_NOISEFLOOR/2;
-  }
-  M5.Lcd.fillRect(0, 0,
-                  TFT_WIDTH, TFT_HEIGHT, BLACK);
-  uint16_t y = TFT_HEIGHT - (oscbuf_[0] - minV) * my;
-  for (i = 0; i < s; ++i) {
-    uint16_t y2 = TFT_HEIGHT - (oscbuf_[i] - minV) * my;
-    M5.Lcd.drawLine((uint16_t)(i * mx), y,
-                    (uint16_t)((i+1)*mx), y2, LIGHTGREY);
-    y = y2;
-  }
-  showFreq(freq);
-}
-
-void showTuner() {
-  double *vTemp_ = vTemp[curbuf ^ 1];
-  double freq = dywapitch_computepitch(&pitchTracker, vTemp_);
-  double fnote;
-  int note;
-  if (freq > 0) {
-    fnote = log2(freq)*12 - 36.376316562;
-    note = fnote + 0.5;
-  }
-  else {
-    note = -1;
-  }
-  uint32_t bgcolor, fgcolor;
-  if (note >= 0) {
-    double cent = (fnote - note) * 100;
-    if (abs(cent) < 2.) {
-      bgcolor = GREEN;
-      fgcolor = BLACK;
-    }
-    else {
-      bgcolor = DARKGREY;
-      fgcolor = BLACK;
-    }
-    M5.Lcd.fillRect(0, 0, TFT_WIDTH, TFT_HEIGHT, bgcolor);
-    M5.Lcd.setTextColor(fgcolor);
-    M5.Lcd.drawRect(2, 36, TFT_WIDTH-3, TFT_HEIGHT-40, fgcolor);
-    M5.Lcd.drawLine(TFT_WIDTH/2 + 1, 36, TFT_WIDTH/2 + 1, TFT_HEIGHT - 4, fgcolor);
-    M5.Lcd.fillCircle(((double)TFT_WIDTH/2 + 1) + cent * ((double)(TFT_WIDTH-3)/100), (TFT_HEIGHT+34)/2, 5, fgcolor);
-    char strbuf[8];
-    sprintf(strbuf, "%s%d", notestr[note % 12], note / 12 - 1);
-    M5.Lcd.drawCentreString(strbuf, TFT_WIDTH/2, 3, 4);
-  }
-  else {
-    M5.Lcd.fillRect(0, 0, TFT_WIDTH, TFT_HEIGHT, DARKGREY);
-    M5.Lcd.drawRect(2, 36, TFT_WIDTH-3, TFT_HEIGHT-40, BLACK);
-    M5.Lcd.drawLine(TFT_WIDTH/2 + 1, 36, TFT_WIDTH/2 + 1, TFT_HEIGHT - 4, BLACK);
-  }
-}
-
 void looptask(void *) {
   while (1) {
     if (needinit) {
@@ -391,14 +298,6 @@ void looptask(void *) {
       switch(runmode) {
         case ModeSpectrumBars:
           showSpectrumBars();
-          break;
-
-        case ModeOscilloscope:
-          showOscilloscope();
-          break;
-
-        case ModeTuner:
-          showTuner();
           break;
       }
       semaphore = false;
@@ -437,27 +336,6 @@ void loop() {
       }
       curbuf ^= 1;
       semaphore = true;
-      break;
-    case ModeOscilloscope:
-      for (i = 0; i < SAMPLES; ++i) {
-        vTemp[curbuf][i + j] = (int)adcBuffer[i] - dc;
-      }
-      if (++bufposcount >= OSC_SKIPCOUNT) {
-        bufposcount = 0;
-        curbuf ^= 1;
-        semaphore = true;
-      }
-      break;
-    case ModeTuner:
-      j = bufposcount * SAMPLES;
-      for (i = 0; i < SAMPLES; ++i) {
-        vTemp[curbuf][i + j] = (int)adcBuffer[i] - dc;
-      }
-      if (++bufposcount >= OSC_SKIPCOUNT) {
-        bufposcount = 0;
-        curbuf ^= 1;
-        semaphore = true;
-      }
       break;
   }
 }
