@@ -60,7 +60,6 @@ SOFTWARE.
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
-#include "dywapitchtrack.h"
 
 #define PIN_CLK  0
 #define PIN_DATA 34
@@ -102,7 +101,7 @@ volatile bool semaphore = true;
 static bool needinit = true;
 
 static eqBand audiospectrum[BANDS] = {
-  // freqname,peak,lastpeak,lastval,
+  // freqname, peak, lastpeak,lastval,
   { ".1k", 0 },
   { ".2k", 0 },
   { ".5k", 0 },
@@ -117,13 +116,8 @@ static double vTemp[2][MAXBUFSIZE];
 static uint8_t curbuf = 0;
 static uint16_t colormap[TFT_HEIGHT];//color palette for the band meter(pre-fill in setup)
 
-static dywapitchtracker pitchTracker;
 
 static int bufposcount = 0;
-
-static const char *notestr[12] = {
-  "C ", "C#", "D ", "D#", "E ", "F ", "F#", "G ", "G#", "A ", "A#", "B "
-};
 
 static uint16_t oscbuf[2][OSC_SAMPLES];
 static int skipcount = 0;
@@ -146,7 +140,7 @@ void i2sInit(){
    pin_config.data_in_num  = PIN_DATA; 
    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
    i2s_set_pin(I2S_NUM_0, &pin_config);
-   i2s_set_clk(I2S_NUM_0, 44100,I2S_BITS_PER_SAMPLE_16BIT,I2S_CHANNEL_MONO);
+   i2s_set_clk(I2S_NUM_0, 44100, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
 }
  
 void setup() {
@@ -157,15 +151,13 @@ void setup() {
 
   i2sInit();
  
-  for(uint8_t i=0;i<TFT_HEIGHT;i++) {
-    //colormap[i] = M5.Lcd.color565(TFT_HEIGHT-i*.5,i*1.1,0); //RGB
-    //colormap[i] = M5.Lcd.color565(TFT_HEIGHT-i*4.4,i*2.5,0);//RGB:rev macsbug
+  for(uint8_t i=0; i<TFT_HEIGHT; i++) {
     double r = TFT_HEIGHT - i;
     double g = i;
     double mag = (r > g)? 255./r : 255./g;
     r *= mag;
     g *= mag;
-    colormap[i] = M5.Lcd.color565((uint8_t)r,(uint8_t)g,0); // Modified by KKQ-KKQ
+    colormap[i] = M5.Lcd.color565((uint8_t)r, (uint8_t) g,0); // Modified by KKQ-KKQ
   }
   xTaskCreatePinnedToCore(looptask, "calctask", 32768, NULL, 1, NULL, 1);
 }
@@ -177,7 +169,7 @@ void initMode() {
       M5.Lcd.setTextSize(1);
       M5.Lcd.setTextColor(LIGHTGREY);
       for (byte band = 0; band < BANDS; band++) {
-        M5.Lcd.setCursor(BANDS_WIDTH*band + 2, 0);
+        M5.Lcd.setCursor(BANDS_WIDTH * band + 2, 0);
         M5.Lcd.print(audiospectrum[band].freqname);
       }
       break;
@@ -185,7 +177,7 @@ void initMode() {
 }
 
 void showSpectrumBars(){
-  double *vTemp_ = vTemp[curbuf^1];
+  double *vTemp_ = vTemp[curbuf ^ 1];
 
   FFT.Windowing(vTemp_, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
   FFT.Compute(vTemp_, vTemp_ + SAMPLES, SAMPLES, FFT_FORWARD);
@@ -270,23 +262,7 @@ double calcNumSamples(double f) {
   return s;
 }
 
-void showFreq(double freq) {
-  if (freq > 0) {
-    char strbuf[16];
-    sprintf(strbuf, "%8.2fHz", freq);
-    M5.Lcd.drawString(strbuf, 0, 0, 1);
-    double fnote = log2(freq)*12 - 36.376316562;
-    int note = fnote + 0.5;
-    if (note >= 0) {
-      M5.Lcd.setCursor(TFT_WIDTH/2 - 4, 0);
-      M5.Lcd.print(notestr[note % 12]);
-      M5.Lcd.print(note / 12 - 1);
-      double cent = (fnote - note) * 100;
-      sprintf(strbuf, "%.1fcents", cent);
-      M5.Lcd.drawRightString(strbuf, TFT_WIDTH, 0, 1);
-    }
-  }
-}
+
 
 void looptask(void *) {
   while (1) {
@@ -320,7 +296,7 @@ void loop() {
   uint16_t i,j;
   j = bufposcount * SAMPLES;
   uint16_t *adcBuffer = &oscbuf[curbuf][j];
-  i2s_read_bytes(I2S_NUM_0,(char*)adcBuffer,READ_LEN,500);
+  i2s_read_bytes(I2S_NUM_0, (char*)adcBuffer, READ_LEN, 500);
   int32_t dc = 0;
   for (int i = 0; i < SAMPLES; ++i) {
     dc += adcBuffer[i];
