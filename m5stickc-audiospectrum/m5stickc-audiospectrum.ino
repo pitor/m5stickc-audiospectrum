@@ -74,13 +74,7 @@ SOFTWARE.
 #define ATTENUATION 2.5
 #define NOISE_FLOOR 316.227766017 // pow(10, ATTENUATION)
 #define MAGNIFY 23
-#define OSC_NOISEFLOOR 100
-#define OSC_SAMPLES DYWAPT_SAMPLESIZE
-#define OSC_SKIPCOUNT (OSC_SAMPLES/SAMPLES)
-#define OSC_EXTRASKIP 1
-
-//#define MAXBUFSIZE (2*SAMPLES)
-#define MAXBUFSIZE OSC_SAMPLES
+#define MAXBUFSIZE 2048
 
 arduinoFFT FFT = arduinoFFT();  
 
@@ -119,7 +113,7 @@ static uint16_t colormap[TFT_HEIGHT];//color palette for the band meter(pre-fill
 
 static int bufposcount = 0;
 
-static uint16_t oscbuf[2][OSC_SAMPLES];
+static uint16_t oscbuf[2][MAXBUFSIZE];
 static int skipcount = 0;
 
 void i2sInit(){
@@ -212,8 +206,7 @@ void showSpectrumBars(){
       M5.Lcd.drawFastHLine(hpos,TFT_HEIGHT-audiospectrum[band].lastpeak,BAR_WIDTH,BLACK);
       audiospectrum[band].lastpeak = audiospectrum[band].peak;
       uint16_t ypos = TFT_HEIGHT - audiospectrum[band].peak;
-      M5.Lcd.drawFastHLine(hpos, ypos,
-                           BAR_WIDTH, colormap[ypos]);
+      M5.Lcd.drawFastHLine(hpos, ypos, BAR_WIDTH, colormap[ypos]);
     }
   } 
 }
@@ -250,18 +243,6 @@ byte getBand(int i) {
   if (i >= 256 && i < 512) return 7;  // 16000Hz
   return 8;
 }
-
-double calcNumSamples(double f) {
-  if (f == 0.0) return SAMPLES/2;
-  double s = (double)(44100 * 2) / f;
-  if (s > (double)OSC_SAMPLES) {
-    do {
-      s *= 0.5;
-    } while (s > (double)OSC_SAMPLES);
-  }
-  return s;
-}
-
 
 
 void looptask(void *) {
