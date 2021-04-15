@@ -9,21 +9,19 @@ void setup() {
 
   Serial.begin(115200);
 
-  setupRead();
-
-  File file = SD.open("/setup.json");
-  if (!file) {
-    Serial.println("Failed to open file for reading");
+  setupStatus status = setupRead();
+  if(status == CPSetup_ReadFromSD) {
+    M5.Lcd.println("Read from file");
+    M5.Lcd.println("Remove SD-card and reset");
     return;
   }
 
-  Serial.print("Read from file: ");
-  M5.Lcd.print("Read from file: ");
-  while (file.available()) {
-    ch = file.read();
-    Serial.write(ch);
-    M5.Lcd.write(ch);
+  if(status == CPSetup_ReadFromFlash) {
+    M5.Lcd.println("Read from file");
+    M5.Lcd.println("Ready to proceed");
+    return;
   }
+  M5.Lcd.println("Something might have failed");
 }
 
 void loop() {
