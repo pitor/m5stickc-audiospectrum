@@ -4,16 +4,22 @@
 #define PIN_CLK  0
 #define PIN_DATA 34
 #define READ_LEN (2 * 256)
-#define GAIN_FACTOR 3
+#define GAIN_FACTOR 6
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 135
 
-uint8_t BUFFER[READ_LEN] = { 0 };
+uint8_t BUFFER1[READ_LEN] = { 0 };
+uint8_t BUFFER2[READ_LEN] = { 0 };
 
 uint16_t oldy[DISPLAY_WIDTH];
 int16_t *adcBuffer = NULL;
 
+uint8_t readyForUpdate = 0;
+const TickType_t delay10 = 10 / portTICK_PERIOD_MS;
+const TickType_t delay100 = 100 / portTICK_PERIOD_MS;
 
+TaskHandle_t micTaskHandle;
+TaskHandle_t drawTaskHandle;
 
 void showSignal(){
   int y;
@@ -26,15 +32,27 @@ void showSignal(){
   }
 }
 
+void show_signal_task(void* arg) {
+  while(1) {
+    if(readyForUpdate) {
+      showSignal();
+      readyForUpdate = 0;
+    }
+    vTaskDelay(delay10);
+  }
+}
 
 void mic_record_task (void* arg)
-{   
+{ 
+  i2sInit();
   size_t bytesread;
+  uint8_t * currentBuffer = 0;
   while(1) {
-    i2s_read(I2S_NUM_0,(char*) BUFFER, READ_LEN, &bytesread, (100 / portTICK_RATE_MS));
-    adcBuffer = (int16_t *)BUFFER;
-    showSignal();
-    vTaskDelay(100 / portTICK_RATE_MS);
+    currentBuffer = currentBuffer == BUFFER1 ? BUFFER2 : BUFFER1;
+    i2s_read(I2S_NUM_0, currentBuffer, READ_LEN, &bytesread, (100 / portTICK_RATE_MS));
+    adcBuffer = (int16_t *)currentBuffer;
+    readyForUpdate = 1;
+    vTaskDelay(delay10);
   }
 }
 
@@ -71,9 +89,30 @@ void setup() {
   M5.Lcd.setTextColor(WHITE, BLACK);
   M5.Lcd.println("mic test");
   delay(1000);
+  M5.Lcd.fillScreen(BLUE);
+
   
-  i2sInit();
-  xTaskCreate(mic_record_task, "mic_record_task", 2048, NULL, 1, NULL);
+  
+   xTaskCreatePinnedToCore(
+      show_signal_task, // Function to implement the task
+      "show_signal_task", // Name of the task
+      2048,  // Stack size in words
+      NULL,  // Task input parameter
+      0,  // Priority of the task
+      &drawTaskHandle,  // Task handle.
+      0); // Core where the task should run
+
+   
+   xTaskCreatePinnedToCore(
+      mic_record_task, // Function to implement the task 
+      "mic_record_task", // Name of the task 
+      2048,  // Stack size in words 
+      NULL,  // Task input parameter 
+      0,  // Priority of the task 
+      &micTaskHandle,  // Task handle.
+      1); // Core where the task should run 
+
+
 }
 
 
