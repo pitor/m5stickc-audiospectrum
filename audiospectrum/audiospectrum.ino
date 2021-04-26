@@ -1,15 +1,18 @@
+#include <arduinoFFT.h>
 #include <M5StickCPlus.h>
 #include <driver/i2s.h>
 
 #define PIN_CLK  0
 #define PIN_DATA 34
-#define READ_LEN (2 * 256)
+#define SAMPLES 1024
+#define READ_LEN (2 * SAMPLES)
 #define GAIN_FACTOR 6
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 135
 
-uint8_t BUFFER1[READ_LEN] = { 0 };
-uint8_t BUFFER2[READ_LEN] = { 0 };
+uint8_t buffer1[READ_LEN] = { 0 };
+uint8_t buffer2[READ_LEN] = { 0 };
+double ttfbuffer[SAMPLES];
 
 uint16_t bgColor = TFT_BLACK;
 uint16_t meterColor = GREEN;
@@ -26,6 +29,8 @@ const TickType_t delay100 = 100 / portTICK_PERIOD_MS;
 TaskHandle_t micTaskHandle;
 TaskHandle_t drawTaskHandle;
 TaskHandle_t buttonTaskHandle;
+
+arduinoFFT FFT = arduinoFFT();  
 
 void showSignal() {
   int y;
@@ -69,7 +74,7 @@ void mic_record_task (void* arg)
   size_t bytesread;
   uint8_t * currentBuffer = 0;
   while (1) {
-    currentBuffer = currentBuffer == BUFFER1 ? BUFFER2 : BUFFER1;
+    currentBuffer = currentBuffer == buffer1 ? buffer2 : buffer1;
     i2s_read(I2S_NUM_0, currentBuffer, READ_LEN, &bytesread, (100 / portTICK_RATE_MS));
     adcBuffer = (int16_t *)currentBuffer;
     readyForUpdate = 1;
