@@ -6,12 +6,13 @@
 #define PIN_DATA 34
 #define SAMPLES 1024
 #define READ_LEN (2 * SAMPLES)
-#define GAIN_FACTOR 6
+#define GAIN_FACTOR 10
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 135
 
 #define BANDS 8
 #define ATTENUATION 2.5
+#define MAGNIFY 23
 #define NOISE_FLOOR 316.227766017
 
 uint8_t buffer1[READ_LEN] = { 0 };
@@ -37,6 +38,8 @@ TaskHandle_t buttonTaskHandle;
 
 SemaphoreHandle_t bufferMutex;
 
+TFT_eSprite img = TFT_eSprite(&M5.Lcd);
+
 arduinoFFT FFT = arduinoFFT();
 
 byte getBand(int i) {
@@ -53,26 +56,49 @@ byte getBand(int i) {
 
 void showSignal() {
   int y;
-  if (redrawBackground) {
-    M5.Lcd.fillScreen(bgColor);
-    redrawBackground = false;
-  }
+  //if (redrawBackground) {
+    img.fillSprite(bgColor);
+    //redrawBackground = false;
+  //}
 
   xSemaphoreTake(bufferMutex, portMAX_DELAY);
   FFT.Windowing(fftBufferReal, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
   FFT.Compute(fftBufferReal, fftBufferImag, SAMPLES, FFT_FORWARD);
   FFT.ComplexToMagnitude(fftBufferReal, fftBufferImag, SAMPLES);
   double values[BANDS] = {};
+  for (int i = 2; i < (SAMPLES/2); i++){ 
+    // Don't use sample 0 and only first SAMPLES/2 are usable. 
+    // Each array element represents a frequency and its value the amplitude.
+    if (fftBufferReal[i] > NOISE_FLOOR) {
+      byte bandNum = getBand(i);
+      if(bandNum != 8 && fftBufferReal[i] > values[bandNum]) {
+        values[bandNum] = fftBufferReal[i];
+      }
+    }
+  }
 
   xSemaphoreGive(bufferMutex);
 
   for (int n = 0; n < DISPLAY_WIDTH; n++) {
     y = adcBuffer[n] * GAIN_FACTOR;
     y = map(y, INT16_MIN, INT16_MAX, 10, 125);
-    M5.Lcd.drawPixel(n, oldy[n], traceColor);
-    M5.Lcd.drawPixel(n, y, meterColor);
+    img.drawPixel(n, oldy[n], traceColor);
+    img.drawPixel(n, y, meterColor);
     oldy[n] = y;
   }
+
+  int imgHeight = img.height();
+  for(uint32_t i; i < BANDS; i++) {
+    uint32_t x = i * 12 + 60;
+    int32_t height = (log10(values[i]) - ATTENUATION) * MAGNIFY;
+    if(height < 1)
+      height = 1; 
+    img.drawFastVLine(x, imgHeight - height, imgHeight, TFT_RED);
+    img.drawFastVLine(x + 1, imgHeight - height, imgHeight, TFT_RED);
+    img.drawFastVLine(x + 2, imgHeight - height, imgHeight, TFT_RED);
+  }
+
+  img.pushSprite(0, 0);
 }
 
 void show_signal_task(void* arg) {
@@ -149,6 +175,10 @@ void setup() {
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.setTextColor(WHITE, BLACK);
   M5.Lcd.println("mic test");
+
+  img.createSprite(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+  img.fillSprite(TFT_BLACK);
+  
   delay(1000);
   redrawBackground = 1;
 
@@ -161,7 +191,7 @@ void setup() {
     NULL,  // Task input parameter
     0,  // Priority of the task
     &drawTaskHandle,  // Task handle.
-    0); // Core where the task should run
+    1); // Core where the task should run
 
   xTaskCreatePinnedToCore(
     button_task, // Function to implement the task
