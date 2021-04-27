@@ -10,9 +10,14 @@
 #define DISPLAY_WIDTH 240
 #define DISPLAY_HEIGHT 135
 
+#define BANDS 8
+#define ATTENUATION 2.5
+#define NOISE_FLOOR 316.227766017
+
 uint8_t buffer1[READ_LEN] = { 0 };
 uint8_t buffer2[READ_LEN] = { 0 };
-double ttfbuffer[SAMPLES];
+double fftBufferReal[ SAMPLES ];
+double fftBufferImag[ SAMPLES ];
 
 uint16_t bgColor = TFT_BLACK;
 uint16_t meterColor = GREEN;
@@ -30,7 +35,21 @@ TaskHandle_t micTaskHandle;
 TaskHandle_t drawTaskHandle;
 TaskHandle_t buttonTaskHandle;
 
-arduinoFFT FFT = arduinoFFT();  
+SemaphoreHandle_t bufferMutex;
+
+arduinoFFT FFT = arduinoFFT();
+
+byte getBand(int i) {
+  if (i >= 2   && i < 4  ) return 0;  // 125Hz
+  if (i >= 4   && i < 8  ) return 1;  // 250Hz
+  if (i >= 8   && i < 16 ) return 2;  // 500Hz
+  if (i >= 16  && i < 32 ) return 3;  // 1000Hz
+  if (i >= 32  && i < 64 ) return 4;  // 2000Hz
+  if (i >= 64  && i < 128) return 5;  // 4000Hz
+  if (i >= 128 && i < 256) return 6;  // 8000Hz
+  if (i >= 256 && i < 512) return 7;  // 16000Hz
+  return 8;
+}
 
 void showSignal() {
   int y;
@@ -38,6 +57,14 @@ void showSignal() {
     M5.Lcd.fillScreen(bgColor);
     redrawBackground = false;
   }
+
+  xSemaphoreTake(bufferMutex, portMAX_DELAY);
+  FFT.Windowing(fftBufferReal, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(fftBufferReal, fftBufferImag, SAMPLES, FFT_FORWARD);
+  FFT.ComplexToMagnitude(fftBufferReal, fftBufferImag, SAMPLES);
+  double values[BANDS] = {};
+
+  xSemaphoreGive(bufferMutex);
 
   for (int n = 0; n < DISPLAY_WIDTH; n++) {
     y = adcBuffer[n] * GAIN_FACTOR;
@@ -77,6 +104,14 @@ void mic_record_task (void* arg)
     currentBuffer = currentBuffer == buffer1 ? buffer2 : buffer1;
     i2s_read(I2S_NUM_0, currentBuffer, READ_LEN, &bytesread, (100 / portTICK_RATE_MS));
     adcBuffer = (int16_t *)currentBuffer;
+
+    xSemaphoreTake(bufferMutex, portMAX_DELAY);
+    for (int i = 0; i < SAMPLES; ++i) {
+      fftBufferReal[i] = (int)adcBuffer[i];
+      fftBufferImag[i] = 0.0;
+    }
+    xSemaphoreGive(bufferMutex);
+
     readyForUpdate = 1;
     vTaskDelay(delay10);
   }
@@ -116,6 +151,8 @@ void setup() {
   M5.Lcd.println("mic test");
   delay(1000);
   redrawBackground = 1;
+
+  bufferMutex = xSemaphoreCreateMutex();
 
   xTaskCreatePinnedToCore(
     show_signal_task, // Function to implement the task
